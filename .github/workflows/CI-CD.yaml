@@ -3,7 +3,8 @@ name: Deploy HashiCorp Vault to Minikube (CI/CD Pipeline)
 on:
   push:
     branches:
-      - main  # Trigger deployment on push to the main branch
+#      - main  # Trigger deployment on push to the main branch
+      - Tesing_1
 
 jobs:
 
