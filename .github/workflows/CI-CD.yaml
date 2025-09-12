@@ -4,7 +4,7 @@ on:
   push:
     branches:
 #      - main  # Trigger deployment on push to the main branch
-      - Tesing_1
+      - Testing_1
 
 jobs:
 
