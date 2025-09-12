@@ -274,3 +274,5 @@ jobs:
         if: failure()
         run: |
           curl -X POST -H 'Content-type: application/json' --data '{"text":"Deployment failed for run #${{ github.run_number }} on branch ${{ github.ref_name }}. Please check the logs for more details."}' ${{ secrets.SLACK_WEBHOOK_URL }}
+
+          
