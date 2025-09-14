@@ -4,7 +4,7 @@ replicaCount: 1
 # Image configuration for the Vault server
 image:
   repository: trialu4tbby.jfrog.io/vault-repo/vault-server
-  tag: "latest"
+  tag: "1.13.3"
   pullPolicy: IfNotPresent
 
 # Service configuration for accessing Vault

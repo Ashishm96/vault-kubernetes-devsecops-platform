@@ -20,7 +20,7 @@ data:
     }
 
     # API address for external access
-    api_addr = "https://vault.minikube.local"  # Use Ingress host
+    api_addr = "https://vault.vault-deployment.svc.cluster.local:8200"
 
     # Cluster address for Raft communication
     cluster_addr = "https://vault.vault-deployment.svc.cluster.local:8201"
