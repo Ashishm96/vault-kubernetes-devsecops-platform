@@ -3,7 +3,7 @@ name: Deploy HashiCorp Vault to Minikube (CI/CD Pipeline)
 on:
   push:
     branches:
-      - main  # Trigger deployment on push to the main branch
+      - main
 
 jobs:
 
@@ -13,13 +13,14 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v2
 
-      - name: Verify Docker Access
-        run: docker --version
+      - name: Verify Podman Access
+        run: podman --version
 
       - name: Check Helm and Kubectl Versions
         run: |
           kubectl version --client
           helm version
+
 
   build:
     runs-on: self-hosted
@@ -28,25 +29,19 @@ jobs:
       JFROG_REGISTRY: "trialp14fhd.jfrog.io"
       JFROG_REPO: "vault-repo"
       IMAGE_NAME: "vault-server"
-      BASE_VERSION: "1.0"
       IMAGE_TAG: "${{ github.run_number }}-$(date +'%Y%m%d')"
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v2
 
-      - name: Cache Docker layers
-        uses: actions/cache@v3
-        with:
-          path: /tmp/.buildx-cache
-          key: docker-${{ runner.os }}-${{ github.sha }}
-          restore-keys: |
-            docker-${{ runner.os }}-
-
-      - name: Build Docker Image
+      - name: Build Image with Podman
         run: |
-          set -e  
-          echo "Building Docker image..."
-          docker build -t ${{ env.JFROG_REGISTRY }}/${{ env.JFROG_REPO }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} -f docker/Dockerfile .
+          set -e
+          echo "Building image using Podman..."
+          podman build \
+            -t $JFROG_REGISTRY/$JFROG_REPO/$IMAGE_NAME:$IMAGE_TAG \
+            -f docker/Dockerfile .
+
 
   push:
     runs-on: self-hosted
@@ -60,21 +55,18 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v2
 
-      - name: Log in to JFrog Artifactory
-        uses: docker/login-action@v2
-        with:
-          registry: ${{ env.JFROG_REGISTRY }}
-          username: ${{ secrets.JFROG_USERNAME }}
-          password: ${{ secrets.JFROG_PASSWORD }}
-
-      - name: Debug Image Tag
+      - name: Login to JFrog using Podman
         run: |
-          echo "Image tag is: ${{ env.IMAGE_TAG }}"
+          echo "${{ secrets.JFROG_PASSWORD }}" | \
+          podman login $JFROG_REGISTRY \
+            --username "${{ secrets.JFROG_USERNAME }}" \
+            --password-stdin
 
-      - name: Push Docker Image to JFrog Artifactory
+      - name: Push Image to JFrog
         run: |
-          echo "Pushing Docker image to JFrog Artifactory..."
-          docker push ${{ env.JFROG_REGISTRY }}/${{ env.JFROG_REPO }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+          echo "Pushing image to JFrog..."
+          podman push \
+            $JFROG_REGISTRY/$JFROG_REPO/$IMAGE_NAME:$IMAGE_TAG
 
 
   vulnerability_check:
@@ -84,37 +76,22 @@ jobs:
       JFROG_REGISTRY: "trialp14fhd.jfrog.io"
       JFROG_REPO: "vault-repo"
       IMAGE_NAME: "vault-server"
+      IMAGE_TAG: "${{ github.run_number }}-$(date +'%Y%m%d')"
     steps:
-      - name: Set IMAGE_TAG
-        id: set_image_tag
-        run: echo "IMAGE_TAG=${GITHUB_RUN_NUMBER}-$(date +'%Y%m%d')" >> $GITHUB_ENV
-
-      - name: Log in to JFrog Artifactory
-        uses: docker/login-action@v2
-        with:
-          registry: ${{ env.JFROG_REGISTRY }}
-          username: ${{ secrets.JFROG_USERNAME }}
-          password: ${{ secrets.JFROG_PASSWORD }}
-
       - name: Checkout Repository
         uses: actions/checkout@v2
 
-      - name: Pull and Verify Docker Image
-        run: |
-          echo "Pulling Docker image from Artifactory for verification..."
-          docker pull ${{ env.JFROG_REGISTRY }}/${{ env.JFROG_REPO }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
-
-      - name: Run Trivy Vulnerability Scan
+      - name: Run Trivy Scan (Registry Image)
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ env.JFROG_REGISTRY }}/${{ env.JFROG_REPO }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
-          format: 'table'
+          format: table
           output: trivy-report.txt
           exit-code: '1'
           ignore-unfixed: true
           vuln-type: 'os,library'
           severity: 'HIGH,CRITICAL'
-        continue-on-error: true  # Allow the workflow to continue even if this step fails
+        continue-on-error: true
 
       - name: Upload Trivy Report
         uses: actions/upload-artifact@v4
@@ -139,72 +116,49 @@ jobs:
 
       - name: Create Namespace if Not Exists
         run: |
-          echo "Preparing Kubernetes namespace..."
-          kubectl get namespace ${{ env.K8S_NAMESPACE }} || kubectl create namespace ${{ env.K8S_NAMESPACE }}
+          kubectl get namespace $K8S_NAMESPACE || \
+          kubectl create namespace $K8S_NAMESPACE
 
       - name: Lint Helm Chart
         run: helm lint ./helm
 
-      - name: Cache Helm Dependencies
-        uses: actions/cache@v3
-        with:
-          path: ~/.helm/cache
-          key: helm-${{ runner.os }}-${{ hashFiles('**/Chart.yaml', '**/values.yaml') }}
-          restore-keys: |
-            helm-${{ runner.os }}-
-
       - name: Helm Dry Run
         run: |
-          echo "Performing a dry-run for Vault Helm deployment..."
           helm upgrade --install vault ./helm \
-            --namespace ${{ env.K8S_NAMESPACE }} \
-            --set image.repository=${{ env.JFROG_REGISTRY }}/${{ env.JFROG_REPO }}/${{ env.IMAGE_NAME }} \
-            --set image.tag=${{ env.IMAGE_TAG }} \
+            --namespace $K8S_NAMESPACE \
+            --set image.repository=$JFROG_REGISTRY/$JFROG_REPO/$IMAGE_NAME \
+            --set image.tag=$IMAGE_TAG \
             --set server.ha.enabled=true \
             --dry-run
 
-      - name: Install/Upgrade Vault with Helm
+      - name: Install / Upgrade Vault
         run: |
-          echo "Deploying Vault using Helm..."
           helm upgrade --install vault ./helm \
-            --namespace ${{ env.K8S_NAMESPACE }} \
-            --set image.repository=${{ env.JFROG_REGISTRY }}/${{ env.JFROG_REPO }}/${{ env.IMAGE_NAME }} \
-            --set image.tag=${{ env.IMAGE_TAG }} \
+            --namespace $K8S_NAMESPACE \
+            --set image.repository=$JFROG_REGISTRY/$JFROG_REPO/$IMAGE_NAME \
+            --set image.tag=$IMAGE_TAG \
             --set imagePullSecrets[0].name=jfrog-registry-secret \
             --set server.ha.enabled=true \
             --create-namespace \
             --wait --timeout 300s
 
-      - name: Check Deployment and Pod Status
+      - name: Verify Deployment
         run: |
-          echo "Checking deployment and pod health..."
-          kubectl get all --namespace=${{ env.K8S_NAMESPACE }}
-          kubectl describe deployment/${{ env.K8S_DEPLOYMENT_NAME }} --namespace=${{ env.K8S_NAMESPACE }}
-          kubectl logs -l app.kubernetes.io/name=vault --namespace=${{ env.K8S_NAMESPACE }} --tail=50
+          kubectl get all -n $K8S_NAMESPACE
+          kubectl describe deployment/$K8S_DEPLOYMENT_NAME -n $K8S_NAMESPACE
 
-      - name: Verify Helm Chart Deployment
+      - name: Verify Vault Health
         run: |
-          echo "Verifying Helm chart deployment..."
-          helm status vault --namespace ${{ env.K8S_NAMESPACE }}
-
-      - name: Verify Vault Accessibility
-        run: |
-          echo "Checking Vault availability..."
-          kubectl port-forward svc/vault --namespace=${{ env.K8S_NAMESPACE }} 8200:8200 &
-          FORWARD_PID=$!
-          sleep 5  
-          curl -k http://localhost:8200/v1/sys/health || echo "Vault is not reachable!"
-          kill $FORWARD_PID
+          kubectl port-forward svc/vault -n $K8S_NAMESPACE 8200:8200 &
+          PID=$!
+          sleep 5
+          curl -k http://localhost:8200/v1/sys/health || true
+          kill $PID
 
       - name: Rollback on Failure
         if: failure()
         run: |
-          if helm list --namespace ${{ env.K8S_NAMESPACE }} | grep -q "vault"; then
-            echo "Rolling back Vault deployment..."
-            helm rollback vault --namespace ${{ env.K8S_NAMESPACE }}
-          else
-            echo "No existing Vault deployment to roll back."
-          fi
+          helm rollback vault -n $K8S_NAMESPACE || true
 
 
   monitoring:
@@ -216,61 +170,50 @@ jobs:
 
       - name: Install Prometheus
         run: |
-          echo "Installing Prometheus..."
           helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
           helm repo update
-          helm upgrade --install prometheus prometheus-community/prometheus --namespace monitoring --create-namespace -f ./helm/monitoring/prometheus-values.yaml
+          helm upgrade --install prometheus prometheus-community/prometheus \
+            -n monitoring --create-namespace \
+            -f ./helm/monitoring/prometheus-values.yaml
 
       - name: Install Grafana
         run: |
-          echo "Installing Grafana..."
           helm repo add grafana https://grafana.github.io/helm-charts
           helm repo update
-          helm upgrade --install grafana grafana/grafana --namespace monitoring -f ./helm/monitoring/grafana-values.yaml
+          helm upgrade --install grafana grafana/grafana \
+            -n monitoring \
+            -f ./helm/monitoring/grafana-values.yaml
 
-      - name: Verify Monitoring Setup
-        run: |
-          echo "Verifying Prometheus and Grafana setup..."
-          kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=prometheus,app.kubernetes.io/component=server -n monitoring --timeout=120s
-          kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=grafana -n monitoring --timeout=120s
-          kubectl port-forward svc/prometheus-server -n monitoring 9090:9090 &
-          kubectl port-forward svc/grafana -n monitoring 3000:3000 &
-          sleep 30
-          curl -s http://localhost:9090/targets | grep "vault"
-          curl -s http://localhost:3000 | grep "Grafana"
-        continue-on-error: true
 
-    
   cleanup:
     runs-on: self-hosted
     needs: monitoring
     env:
-        JFROG_REGISTRY: "trialu4tbby.jfrog.io"
-        JFROG_REPO: "vault-repo"
-        IMAGE_NAME: "vault-server"
+      JFROG_REGISTRY: "trialp14fhd.jfrog.io"
+      JFROG_REPO: "vault-repo"
+      IMAGE_NAME: "vault-server"
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v2
- 
-
-      - name: Delete Older Docker Images from JFrog
+      - name: Delete Old Images from JFrog
         run: |
-          echo "Deleting older images from JFrog..."
           curl -u "${{ secrets.JFROG_USERNAME }}:${{ secrets.JFROG_PASSWORD }}" \
-            -X DELETE "https://${{ env.JFROG_REGISTRY }}/artifactory/api/docker/${{ env.JFROG_REPO }}/v2/${{ env.IMAGE_NAME }}/tags?olderThan=3d"
-
+          -X DELETE \
+          "https://$JFROG_REGISTRY/artifactory/api/docker/$JFROG_REPO/v2/$IMAGE_NAME/tags?olderThan=3d"
 
 
   notify:
     runs-on: self-hosted
     needs: [validate, build, push, vulnerability_check, deploy, monitoring, cleanup]
     steps:
-      - name: Send Slack Notification
+      - name: Notify Slack on Success
         if: success()
         run: |
-          curl -X POST -H 'Content-type: application/json' --data '{"text":"Deployment succeeded for run #${{ github.run_number }} on branch ${{ github.ref_name }}."}' ${{ secrets.SLACK_WEBHOOK_URL }}
+          curl -X POST -H 'Content-type: application/json' \
+          --data '{"text":"Vault deployment succeeded for run #${{ github.run_number }}."}' \
+          ${{ secrets.SLACK_WEBHOOK_URL }}
 
-      - name: Send Slack Notification on Failure
+      - name: Notify Slack on Failure
         if: failure()
         run: |
-          curl -X POST -H 'Content-type: application/json' --data '{"text":"Deployment failed for run #${{ github.run_number }} on branch ${{ github.ref_name }}. Please check the logs for more details."}' ${{ secrets.SLACK_WEBHOOK_URL }}
+          curl -X POST -H 'Content-type: application/json' \
+          --data '{"text":"Vault deployment failed for run #${{ github.run_number }}. Check logs."}' \
+          ${{ secrets.SLACK_WEBHOOK_URL }}
