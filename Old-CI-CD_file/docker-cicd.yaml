@@ -28,22 +28,25 @@ jobs:
       JFROG_REGISTRY: "trialp14fhd.jfrog.io"
       JFROG_REPO: "vault-repo"
       IMAGE_NAME: "vault-server"
+      BASE_VERSION: "1.0"
+      IMAGE_TAG: "${{ github.run_number }}-$(date +'%Y%m%d')"
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v2
 
-      - name: Set IMAGE_TAG
-        run: |
-          echo "IMAGE_TAG=${GITHUB_RUN_NUMBER}-$(date +'%Y%m%d')" >> $GITHUB_ENV
+      - name: Cache Docker layers
+        uses: actions/cache@v3
+        with:
+          path: /tmp/.buildx-cache
+          key: docker-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            docker-${{ runner.os }}-
 
-      - name: Build Image with Podman
+      - name: Build Docker Image
         run: |
-          set -e
-          echo "Building image using Podman..."
-          podman build \
-            -t $JFROG_REGISTRY/$JFROG_REPO/$IMAGE_NAME:$IMAGE_TAG \
-            -f docker/Dockerfile .
-
+          set -e  
+          echo "Building Docker image..."
+          docker build -t ${{ env.JFROG_REGISTRY }}/${{ env.JFROG_REPO }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} -f docker/Dockerfile .
 
   push:
     runs-on: self-hosted

@@ -29,10 +29,13 @@ jobs:
       JFROG_REGISTRY: "trialp14fhd.jfrog.io"
       JFROG_REPO: "vault-repo"
       IMAGE_NAME: "vault-server"
-      IMAGE_TAG: "${{ github.run_number }}-$(date +'%Y%m%d')"
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v2
+
+      - name: Set IMAGE_TAG
+        run: |
+          echo "IMAGE_TAG=${GITHUB_RUN_NUMBER}-$(date +'%Y%m%d')" >> $GITHUB_ENV
 
       - name: Build Image with Podman
         run: |
@@ -41,6 +44,7 @@ jobs:
           podman build \
             -t $JFROG_REGISTRY/$JFROG_REPO/$IMAGE_NAME:$IMAGE_TAG \
             -f docker/Dockerfile .
+
 
 
   push:
