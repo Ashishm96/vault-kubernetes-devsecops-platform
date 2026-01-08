@@ -47,30 +47,34 @@ jobs:
 
 
 
-  push:
-    runs-on: self-hosted
-    needs: build
-    env:
-      JFROG_REGISTRY: "trialp14fhd.jfrog.io"
-      JFROG_REPO: "vault-repo"
-      IMAGE_NAME: "vault-server"
-      IMAGE_TAG: "${{ github.run_number }}-$(date +'%Y%m%d')"
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v2
+push:
+  runs-on: self-hosted
+  needs: build
+  env:
+    JFROG_REGISTRY: "trialp14fhd.jfrog.io"
+    JFROG_REPO: "vault-repo"
+    IMAGE_NAME: "vault-server"
+  steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v2
 
-      - name: Login to JFrog using Podman
-        run: |
-          echo "${{ secrets.JFROG_PASSWORD }}" | \
-          podman login $JFROG_REGISTRY \
-            --username "${{ secrets.JFROG_USERNAME }}" \
-            --password-stdin
+    - name: Set IMAGE_TAG
+      run: |
+        echo "IMAGE_TAG=${GITHUB_RUN_NUMBER}-$(date +'%Y%m%d')" >> $GITHUB_ENV
 
-      - name: Push Image to JFrog
-        run: |
-          echo "Pushing image to JFrog..."
-          podman push \
-            $JFROG_REGISTRY/$JFROG_REPO/$IMAGE_NAME:$IMAGE_TAG
+    - name: Login to JFrog using Podman
+      run: |
+        echo "${{ secrets.JFROG_PASSWORD }}" | \
+        podman login $JFROG_REGISTRY \
+          --username "${{ secrets.JFROG_USERNAME }}" \
+          --password-stdin
+
+    - name: Push Image to JFrog
+      run: |
+        echo "Pushing image to JFrog..."
+        podman push \
+          $JFROG_REGISTRY/$JFROG_REPO/$IMAGE_NAME:$IMAGE_TAG
+
 
 
   vulnerability_check:
