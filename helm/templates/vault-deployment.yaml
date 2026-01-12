@@ -36,8 +36,6 @@ spec:
           value: "{{ .Values.vault.addr }}"  
         - name: VAULT_EXTERNAL_ADDR
           value: "{{ .Values.vault.externalAddr }}"  
-        - name: VAULT_CLUSTER_ADDR
-          value: "{{ .Values.vault.clusterAddr }}"
         - name: VAULT_TLS_CERT_FILE
           value: "{{ .Values.certificates.tlsCrtPath }}"
         - name: VAULT_TLS_KEY_FILE

@@ -20,5 +20,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=10s \
   CMD vault status || exit 1
 
 # Start Vault without a local configuration file
+# Vault configuration is provided via Kubernetes ConfigMap
+
 ENTRYPOINT ["vault"]
 CMD ["server"]

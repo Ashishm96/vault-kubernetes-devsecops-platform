@@ -16,12 +16,10 @@ service:
 vault:
   addr: "https://vault.minikube.local"  # Replace <minikube-ip> with the actual IP
   externalAddr: "https://vault.minikube.local"
-  clusterAddr: "https://vault-0.vault-internal:8201"
-
 
 # Storage configuration for Vault
 storage:
-  backend: "raft"  # Use "file" for non-HA
+  backend: "file"  # Use "file" for non-HA
   path: "/vault/data"
 
 # SSL certificate paths
