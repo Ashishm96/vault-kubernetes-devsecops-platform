@@ -19,8 +19,3 @@ data:
 
     ui = true
     disable_mlock = true
-
-    seal "shamir" {
-      secret_shares    = 3
-      secret_threshold = 2
-    }
